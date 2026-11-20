@@ -46,9 +46,12 @@ export function parseSections(raw) {
     .map((part, index) => {
       const [first, ...lines] = part.split('\n');
       const hasTitle = lines.length > 0 && (heading.test(first) || [...first].length <= 36);
+      const body = hasTitle ? lines.join('\n').trim() : part;
+      const marker = /\[\[([^\s[\]]+)\]\]/u.exec(body);
       return {
         title: hasTitle ? first.replace(/^#{1,6}\s+/u, '') : 'มาตรา ' + (index + 1),
-        text: hasTitle ? lines.join('\n').trim() : part,
+        text: marker ? body.slice(0, marker.index) + marker[1] + body.slice(marker.index + marker[0].length) : body,
+        ...(marker && { keyword: { word: marker[1], offset: marker.index } }),
       };
     }).filter(section => section.text);
 }
@@ -76,7 +79,7 @@ export function makeQuestion(section, selectedOffset) {
   const candidates = words.filter(item => [...item.word].length >= 3);
   const choices = candidates.length ? candidates : words;
   const selected = selectedOffset === undefined
-    ? choices[Math.floor(Math.random() * choices.length)]
+    ? section.keyword ?? choices[Math.floor(Math.random() * choices.length)]
     : words.find(item => item.offset === selectedOffset);
   if (!selected) fail('กรุณาเลือกคำจากตัวบท');
   const alternatives = new Map();
