@@ -2,17 +2,19 @@ import { catalog, demo, parseSections, canPlay, createRoom, joinRoom, act, roomV
 
 const ids = new Map(catalog.flatMap(([, entries]) => entries));
 const roomLife = 4 * 60 * 60 * 1000;
-export const maxText = 150000;
-const maxPayload = 1_000_000;
+export const maxText = 500000;
+const maxPayload = 2_000_000;
 
 function response(data, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
 }
 
-function parsePlayable(raw) {
-  if (typeof raw !== 'string' || raw.length > maxText) fail('ข้อความยาวเกิน 150,000 ตัวอักษร');
+function parsePlayable(raw, limit = maxText) {
+  if (typeof raw !== 'string' || raw.length > limit) {
+    fail('ข้อความยาวเกิน ' + limit.toLocaleString('en-US') + ' ตัวอักษร');
+  }
   const sections = parseSections(raw);
-  if (sections.length > 500) fail('บันทึกได้สูงสุด 500 มาตราต่อชุด');
+  if (sections.length > 1500) fail('บันทึกได้สูงสุด 1,500 มาตราต่อชุด');
   return sections;
 }
 
@@ -107,7 +109,7 @@ export async function handleAPI(request, store, password) {
         sections = demo;
         title = 'ชุดตัวอย่าง';
       } else if (data.source === 'paste') {
-        sections = parsePlayable(data.raw);
+        sections = parsePlayable(data.raw, 150000);
         title = 'ข้อความที่วางเอง';
       } else if (ids.has(data.source)) {
         title = ids.get(data.source);
