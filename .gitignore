@@ -1,0 +1,6 @@
+dist/
+data/content/
+.env
+.env.*
+node_modules/
+outputs/

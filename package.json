@@ -1,0 +1,11 @@
+{
+  "name": "sclg-termmatra",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}
