@@ -71,7 +71,7 @@ export async function handleAPI(request, store, password) {
     if (pathname === '/api/catalog' && method === 'GET') {
       const contents = new Map(await store.contentSummary());
       return response(catalog.map(([label, entries]) => ({
-        label, entries: entries.map(([id, title]) => ({ id, title, count: contents.get(id) ?? 0 })),
+        label, entries: entries.map(([id, title, division]) => ({ id, title, ...division, count: contents.get(id) ?? 0 })),
       })));
     }
     if (pathname === '/api/admin' && method === 'GET') {

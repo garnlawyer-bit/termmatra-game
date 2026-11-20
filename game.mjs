@@ -1,17 +1,34 @@
+const divisionIds = ['one', 'two', 'three', 'four', 'five', 'six'];
+
+function subdivide(id, group, unit, numbers) {
+  return numbers.map(number => {
+    const subTitle = unit + ' ' + number;
+    return [id + '-' + divisionIds[number - 1], group + ' ' + subTitle, { group, subTitle }];
+  });
+}
+
 export const catalog = [
   ['กฎหมายสารบัญญัติ', [
-    ['criminal', 'ประมวลกฎหมายอาญา'],
-    ['civil', 'ประมวลกฎหมายแพ่งและพาณิชย์'],
+    ...subdivide('criminal', 'ประมวลกฎหมายอาญา', 'ภาค', [1, 2, 3]),
+    ...subdivide('civil', 'ประมวลกฎหมายแพ่งและพาณิชย์', 'บรรพ', [1, 2, 3, 4, 5, 6]),
   ]],
   ['กฎหมายวิธีพิจารณาความ', [
-    ['criminal-procedure', 'ประมวลกฎหมายวิธีพิจารณาความอาญา'],
-    ['civil-procedure', 'ประมวลกฎหมายวิธีพิจารณาความแพ่ง'],
+    ...subdivide('criminal-procedure', 'ประมวลกฎหมายวิธีพิจารณาความอาญา', 'ภาค', [1, 2, 3, 4, 6]),
+    ...subdivide('civil-procedure', 'ประมวลกฎหมายวิธีพิจารณาความแพ่ง', 'ภาค', [1, 2, 3, 4]),
     ['evidence', 'กฎหมายลักษณะพยานหลักฐาน'],
   ]],
   ['กฎหมายเฉพาะเรื่อง', [
-    ['labor', 'พระราชบัญญัติคุ้มครองแรงงาน'],
-    ['narcotics', 'ประมวลกฎหมายยาเสพติด'],
-    ['juvenile', 'กฎหมายศาลเยาวชนและครอบครัว'],
+    ['constitution', 'รัฐธรรมนูญ'],
+    ['administrative-court', 'จัดตั้งศาลปกครอง'],
+    ['official-tort-liability', 'ความรับผิดทางละเมิดของเจ้าหน้าที่'],
+    ['administrative-procedure', 'วิธีปฏิบัติราชการทางปกครอง'],
+    ['public-prosecution', 'องค์กรอัยการ'],
+    ['prosecutor-commission-regulations', 'ระเบียบคณะกรรมการอัยการ'],
+    ['labor', 'คุ้มครองแรงงาน'],
+    ['labor-relations', 'แรงงานสัมพันธ์'],
+    ['labor-court', 'จัดตั้งศาลแรงงาน'],
+    ['court-constitution', 'พระธรรมนูญ'],
+    ['district-court-procedure', 'วิแขวง'],
   ]],
 ];
 export const demo = [
