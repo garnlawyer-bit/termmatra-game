@@ -1,4 +1,4 @@
-import { catalog, demo, parseSections, canPlay, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
+import { catalog, demo, parseSections, canPlay, sectionSeconds, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
 
 const ids = new Map(catalog.flatMap(([, entries]) => entries));
 const roomLife = 4 * 60 * 60 * 1000;
@@ -98,7 +98,7 @@ export async function handleAPI(request, store, password) {
           if (invalid.length) fail('แต่ละมาตราต้องมีคำต่างกันอย่างน้อย 4 คำ');
           await store.save(key, { raw: data.raw, sections });
         }
-        return response({ sections, invalid });
+        return response({ sections: sections.map(section => ({ ...section, effectiveSeconds: sectionSeconds(section) })), invalid });
       }
     }
     if (pathname === '/api/rooms' && method === 'POST') {
@@ -118,7 +118,8 @@ export async function handleAPI(request, store, password) {
       } else {
         fail('กรุณาเลือกชุดตัวบท');
       }
-      const room = createRoom({ title, sections, names: data.names, count: data.count, manual: data.manual });
+      const room = createRoom({ title, sections, names: data.names, count: data.count, manual: data.manual,
+        mode: data.mode, questionLimit: data.source === 'civil-six' ? data.questionLimit : undefined });
       await store.sweep();
       for (let attempt = 0; attempt < 5; attempt++) {
         const code = crypto.randomUUID().replace(/-/gu, '').slice(0, 20);

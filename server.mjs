@@ -4,6 +4,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { handleAPI } from './api.mjs';
+import { canPlay, parseSections } from './game.mjs';
 
 const rooms = new Map();
 const channels = new Map();
@@ -87,6 +88,31 @@ const security = {
   'Referrer-Policy': 'no-referrer',
   'Content-Security-Policy': "default-src 'self'; form-action 'self'; base-uri 'none'",
 };
+
+async function installBundledContent() {
+  const seedDir = new URL('./data/seed/', import.meta.url);
+  const sources = await readdir(seedDir).catch(error => {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  });
+  if (!sources.length) return;
+  await mkdir(contentDir, { recursive: true });
+  for (const name of sources.filter(name => /^[a-z-]+\.txt$/u.test(name))) {
+    const raw = await readFile(new URL(name, seedDir), 'utf8');
+    const sections = parseSections(raw);
+    if (!sections.length || !sections.every(canPlay)) throw new Error('Invalid bundled content: ' + name);
+    const key = 'content:' + name.slice(0, -4);
+    try {
+      await writeFile(contentFile(key), JSON.stringify({ raw, sections }), { flag: 'wx', encoding: 'utf8' });
+    } catch (error) {
+      if (error.code !== 'EEXIST') throw error;
+    }
+    console.log('Bundled set ready: ' + key.slice(8) + ' (' + sections.length + ' sections)');
+  }
+}
+
+await installBundledContent();
+
 const server = createServer(async (incoming, outgoing) => {
   try {
     const path = new URL(incoming.url, 'http://localhost').pathname;
