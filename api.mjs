@@ -1,7 +1,7 @@
 import { catalog, demo, parseSections, canPlay, getWords, sectionSeconds, sectionsInScope, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
 
 const ids = new Map(catalog.flatMap(([, entries]) => entries));
-const civilScopes = new Map(catalog.flatMap(([, entries]) => entries.flatMap(([book, title, division]) =>
+const lawScopes = new Map(catalog.flatMap(([, entries]) => entries.flatMap(([book, title, division]) =>
   (division?.scopes ?? []).map(scope => [scope.id, { ...scope, book, bookTitle: title }]))));
 const roomLife = 4 * 60 * 60 * 1000;
 export const maxText = 500000;
@@ -114,7 +114,7 @@ export async function handleAPI(request, store, password) {
     }
     if (pathname === '/api/rooms' && method === 'POST') {
       const data = await readJSON(request);
-      const scope = civilScopes.get(data.source);
+      const scope = lawScopes.get(data.source);
       let sections;
       let title;
       if (data.source === 'sample') {

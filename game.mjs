@@ -1,4 +1,21 @@
 const divisionIds = ['one', 'two', 'three', 'four', 'five', 'six'];
+const criminalPartNames = ['บทบัญญัติทั่วไป', 'ความผิด', 'ลหุโทษ'];
+const criminalOffences = [
+  ['1', 'ความผิดเกี่ยวกับความมั่นคงแห่งราชอาณาจักร', 107, 135, true],
+  ['1/1', 'ความผิดเกี่ยวกับการก่อการร้าย', '135/1', '135/4'],
+  ['2', 'ความผิดเกี่ยวกับการปกครอง', 136, 166],
+  ['3', 'ความผิดเกี่ยวกับการยุติธรรม', 167, 205],
+  ['4', 'ความผิดเกี่ยวกับศาสนา', 206, 208],
+  ['5', 'ความผิดเกี่ยวกับความสงบสุขของประชาชน', 209, 216],
+  ['6', 'ความผิดเกี่ยวกับการก่อให้เกิดภยันตรายต่อประชาชน', 217, 239],
+  ['7', 'ความผิดเกี่ยวกับการปลอมและการแปลง', 240, '269/15'],
+  ['8', 'ความผิดเกี่ยวกับการค้า', 270, 275],
+  ['9', 'ความผิดเกี่ยวกับเพศ', 276, '287/2'],
+  ['10', 'ความผิดเกี่ยวกับชีวิตและร่างกาย', 288, 308],
+  ['11', 'ความผิดเกี่ยวกับเสรีภาพและชื่อเสียง', 309, 333],
+  ['12', 'ความผิดเกี่ยวกับทรัพย์', 334, 366, true],
+  ['13', 'ความผิดเกี่ยวกับศพ', '366/1', '366/4'],
+];
 const civilBooks = [
   ['หลักทั่วไป', [['ข้อความเบื้องต้น',1,3],['บทเบ็ดเสร็จทั่วไป',4,14],['บุคคล',15,136],['ทรัพย์',137,148],['นิติกรรม',149,193],['ระยะเวลา','193/1','193/8'],['อายุความ','193/9','193/35']]],
   ['หนี้', [['บทเบ็ดเสร็จทั่วไป',194,353],['สัญญา',354,394],['จัดการงานนอกสั่ง',395,405],['ลาภมิควรได้',406,419],['ละเมิด',420,452]]],
@@ -26,7 +43,7 @@ const articleOrder = (value, atEnd = false) => {
 export function sectionsInScope(sections, scope) {
   if (scope.repealed) return [];
   const first = articleOrder(scope.first);
-  const last = articleOrder(scope.last, true);
+  const last = articleOrder(scope.last, !scope.exactEnd);
   return sections.filter(({ title }) => {
     const number = /^(?:มาตรา|ม\.)\s*([\d๐-๙]+(?:\/[\d๐-๙]+)?)(?![\d๐-๙/])/u.exec(title)?.[1];
     return number !== undefined && articleOrder(number) >= first && articleOrder(number) <= last;
@@ -37,8 +54,12 @@ function subdivide(id, group, unit, numbers) {
   return numbers.map(number => {
     const book = id === 'civil' ? civilBooks[number - 1] : null;
     const bookId = id + '-' + divisionIds[number - 1];
-    const subTitle = unit + ' ' + number + (book ? ' ' + book[0] : '');
-    const scopes = book?.[1].map(([name, first, last, repealed], index) => {
+    const name = book?.[0] ?? (id === 'criminal' ? criminalPartNames[number - 1] : undefined);
+    const subTitle = unit + ' ' + number + (name ? ' ' + name : '');
+    const scopes = id === 'criminal' && number === 2 ? criminalOffences.map(([number, label, first, last, exactEnd]) => ({
+      id: bookId + '-title-' + number.replace('/', '-'), label: 'ลักษณะ ' + number + ' ' + label, first, last,
+      ...(exactEnd && { exactEnd }),
+    })) : book?.[1].map(([name, first, last, repealed], index) => {
       const titleNumber = index + (number === 1 ? 0 : 1);
       return { id: bookId + '-title-' + titleNumber, label: (titleNumber ? 'ลักษณะ ' + titleNumber + ' ' : '') + name,
         first, last, ...(repealed && { repealed }) };
