@@ -282,16 +282,24 @@ export function act(room, token, data, now = Date.now()) {
     if (phase === 'countdown') fail('รอให้เริ่มข้อนี้ก่อน', 409);
     if (phase !== 'question' || question.id !== data.question) fail('ข้อนี้จบแล้ว', 409);
     if (Object.hasOwn(question.attempts, player.id)) fail('คุณตอบข้อนี้แล้ว', 409);
-    const validAnswer = word => typeof word === 'string' && Boolean(word.trim()) && word.length <= 500;
+    const validWord = word => typeof word === 'string' && word.length <= 500;
     const answers = data.words;
     if (question.blanks) {
-      if (!Array.isArray(answers) || answers.length !== question.blanks.length || !answers.every(validAnswer)) fail('กรุณาใส่คำตอบให้ครบทุกช่อง');
-    } else if (!validAnswer(data.word)) fail('กรุณาใส่คำตอบ');
+      if (!Array.isArray(answers) || answers.length !== question.blanks.length ||
+          !answers.every(validWord) || !answers.some(word => word.trim())) fail('กรุณาใส่คำตอบอย่างน้อยหนึ่งช่อง');
+    } else if (!validWord(data.word) || !data.word.trim()) fail('กรุณาใส่คำตอบ');
     if (question.options && !question.options.includes(data.word)) fail('กรุณาเลือกคำจากตัวเลือก');
     const normalize = question.phrase || question.hint?.[0]?.plain ? normalizePhrase : canonicalAnswer;
-    const correct = question.blanks ? question.blanks.every(({ answer }, index) => normalizePhrase(answers[index]) === normalizePhrase(answer)) :
-      normalize(data.word) === normalize(question.answer);
+    const points = question.blanks ? question.blanks.filter(({ answer }, index) => normalizePhrase(answers[index]) === normalizePhrase(answer)).length :
+      Number(normalize(data.word) === normalize(question.answer));
+    const correct = points > 0;
     question.attempts[player.id] = correct;
+    if (question.blanks || question.hint) {
+      question.points ??= {};
+      question.points[player.id] = points;
+      player.score += points;
+      return;
+    }
     if (correct && !question.winner) {
       question.winner = player.id;
       player.score++;
@@ -329,19 +337,24 @@ export function roomView(room, token, now = Date.now()) {
   const phase = phaseAt(room, now);
   const review = phase === 'review';
   const pendingWinner = question?.endsAt && !review ? question.winner : null;
+  const keywordScoring = Boolean(question?.hint || question?.blanks);
   const highScore = Math.max(...room.players.map(player => player.score));
   return {
     title: room.title, phase, index: room.index, serverNow: now,
     total: room.phase === 'done' ? room.index : room.sections.length,
     me: me?.id ?? null, host, manual: room.manual,
-    players: room.players.map(({ id, name, score, token: key }) => ({ id, name, score: score - (id === pendingWinner ? 1 : 0), joined: Boolean(key) })),
+    players: room.players.map(({ id, name, score, token: key }) => ({ id, name,
+      score: score - (review ? 0 : (question?.points?.[id] ?? Number(id === pendingWinner))), joined: Boolean(key) })),
     timing: me && question?.endsAt ? { startsAt: question.startsAt, endsAt: question.endsAt } : undefined,
     titleOfSection: me && phase !== 'lobby' && phase !== 'countdown' ? section?.title : undefined,
     draft: host && room.phase === 'prepare' ? { text: section.text, words: getWords(section.text) } : undefined,
     question: question && me && phase !== 'countdown' ? {
       id: question.id, before: question.before, after: question.after, options: question.options, hint: question.hint,
       blanks: question.blanks?.map(({ before, hint, answer }) => ({ before, hint, answer: review ? answer : undefined })),
-      result: question.attempts[me.id], winner: pendingWinner ? null : question.winner, answer: review ? question.answer : undefined,
+      submitted: Object.hasOwn(question.attempts, me.id),
+      earned: keywordScoring && review ? question.points?.[me.id] : undefined,
+      result: !keywordScoring || review ? question.attempts[me.id] : undefined,
+      winner: pendingWinner ? null : question.winner, answer: review ? question.answer : undefined,
     } : null,
     leaders: room.phase === 'done' ? room.players.filter(player => player.score === highScore).map(player => player.name) : [],
   };
