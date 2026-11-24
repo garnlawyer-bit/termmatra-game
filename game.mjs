@@ -1,9 +1,49 @@
 const divisionIds = ['one', 'two', 'three', 'four', 'five', 'six'];
+const civilBooks = [
+  ['หลักทั่วไป', [['ข้อความเบื้องต้น',1,3],['บทเบ็ดเสร็จทั่วไป',4,14],['บุคคล',15,136],['ทรัพย์',137,148],['นิติกรรม',149,193],['ระยะเวลา','193/1','193/8'],['อายุความ','193/9','193/35']]],
+  ['หนี้', [['บทเบ็ดเสร็จทั่วไป',194,353],['สัญญา',354,394],['จัดการงานนอกสั่ง',395,405],['ลาภมิควรได้',406,419],['ละเมิด',420,452]]],
+  ['เอกเทศสัญญา', [
+    ['ซื้อขาย',453,517],['แลกเปลี่ยน',518,520],['ให้',521,536],['เช่าทรัพย์',537,571],['เช่าซื้อ',572,574],
+    ['จ้างแรงงาน',575,586],['จ้างทำของ',587,607],['รับขน',608,639],['ยืม',640,656],['ฝากทรัพย์',657,679],
+    ['ค้ำประกัน',680,701],['จำนอง',702,746],['จำนำ',747,769],['เก็บของในคลังสินค้า',770,796],
+    ['ตัวแทน',797,844],['นายหน้า',845,849],['ประนีประนอมยอมความ',850,852],['การพนันและขันต่อ',853,855],
+    ['บัญชีเดินสะพัด',856,860],['ประกันภัย',861,897],['ตั๋วเงิน',898,1011],['หุ้นส่วนและบริษัท',1012,'1273/4'],['สมาคม',1274,1297,true],
+  ]],
+  ['ทรัพย์สิน', [
+    ['บทเบ็ดเสร็จทั่วไป',1298,1307],['กรรมสิทธิ์',1308,1366],['ครอบครอง',1367,1386],['ภาระจำยอม',1387,1401],
+    ['อาศัย',1402,1409],['สิทธิเหนือพื้นดิน',1410,1416],['สิทธิเก็บกิน',1417,1428],['ภาระติดพันในอสังหาริมทรัพย์',1429,1434],
+  ]],
+  ['ครอบครัว', [['การสมรส',1435,1535],['บิดามารดากับบุตร',1536,'1598/37'],['ค่าอุปการะเลี้ยงดู','1598/38','1598/41']]],
+  ['มรดก', [['บทเบ็ดเสร็จทั่วไป',1599,1619],['สิทธิโดยธรรมในการรับมรดก',1620,1645],['พินัยกรรม',1646,1710],
+    ['วิธีจัดการและปันทรัพย์มรดก',1711,1752],['มรดกที่ไม่มีผู้รับ',1753,1753],['อายุความ',1754,1755]]],
+];
+
+const articleOrder = (value, atEnd = false) => {
+  const [number, suffix] = String(value).replace(/[๐-๙]/gu, digit => digit.charCodeAt(0) - 0x0e50).split('/');
+  return Number(number) * 1000 + (suffix === undefined && atEnd && Number(number) !== 193 ? 999 : Number(suffix ?? 0));
+};
+
+export function sectionsInScope(sections, scope) {
+  if (scope.repealed) return [];
+  const first = articleOrder(scope.first);
+  const last = articleOrder(scope.last, true);
+  return sections.filter(({ title }) => {
+    const number = /^(?:มาตรา|ม\.)\s*([\d๐-๙]+(?:\/[\d๐-๙]+)?)(?![\d๐-๙/])/u.exec(title)?.[1];
+    return number !== undefined && articleOrder(number) >= first && articleOrder(number) <= last;
+  });
+}
 
 function subdivide(id, group, unit, numbers) {
   return numbers.map(number => {
-    const subTitle = unit + ' ' + number + (id === 'civil' && number === 6 ? ' มรดก' : '');
-    return [id + '-' + divisionIds[number - 1], group + ' ' + subTitle, { group, subTitle }];
+    const book = id === 'civil' ? civilBooks[number - 1] : null;
+    const bookId = id + '-' + divisionIds[number - 1];
+    const subTitle = unit + ' ' + number + (book ? ' ' + book[0] : '');
+    const scopes = book?.[1].map(([name, first, last, repealed], index) => {
+      const titleNumber = index + (number === 1 ? 0 : 1);
+      return { id: bookId + '-title-' + titleNumber, label: (titleNumber ? 'ลักษณะ ' + titleNumber + ' ' : '') + name,
+        first, last, ...(repealed && { repealed }) };
+    });
+    return [bookId, group + ' ' + subTitle, { group, subTitle, ...(scopes && { scopes }) }];
   });
 }
 
@@ -125,7 +165,7 @@ export function makeQuestion(section, selectedOffset, typed = false) {
     attempts: {},
     winner: null,
   };
-  if (typed) return { ...question, hint: selected.plain ? [{ text: '________', plain: true }] : maskedWord(selected.word) };
+  if (typed) return { ...question, phrase: selected.plain === true, hint: maskedWord(selected.word) };
 
   const alternatives = new Map();
   for (const item of words) {
@@ -234,7 +274,7 @@ export function act(room, token, data, now = Date.now()) {
     if (Object.hasOwn(question.attempts, player.id)) fail('คุณตอบข้อนี้แล้ว', 409);
     if (typeof data.word !== 'string' || !data.word.trim() || data.word.length > 500) fail('กรุณาใส่คำตอบ');
     if (question.options && !question.options.includes(data.word)) fail('กรุณาเลือกคำจากตัวเลือก');
-    const normalize = question.hint?.[0]?.plain ? normalizePhrase : canonicalAnswer;
+    const normalize = question.phrase || question.hint?.[0]?.plain ? normalizePhrase : canonicalAnswer;
     const correct = normalize(data.word) === normalize(question.answer);
     question.attempts[player.id] = correct;
     if (correct && !question.winner) {

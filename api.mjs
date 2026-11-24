@@ -1,6 +1,8 @@
-import { catalog, demo, parseSections, canPlay, sectionSeconds, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
+import { catalog, demo, parseSections, canPlay, sectionSeconds, sectionsInScope, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
 
 const ids = new Map(catalog.flatMap(([, entries]) => entries));
+const civilScopes = new Map(catalog.flatMap(([, entries]) => entries.flatMap(([book, title, division]) =>
+  (division?.scopes ?? []).map(scope => [scope.id, { ...scope, book, bookTitle: title }]))));
 const roomLife = 4 * 60 * 60 * 1000;
 export const maxText = 500000;
 const maxPayload = 2_000_000;
@@ -72,9 +74,19 @@ export async function handleAPI(request, store, password) {
   try {
     if (pathname === '/api/catalog' && method === 'GET') {
       const contents = new Map(await store.contentSummary());
-      return response(catalog.map(([label, entries]) => ({
-        label, entries: entries.map(([id, title, division]) => ({ id, title, ...division, count: contents.get(id) ?? 0 })),
-      })));
+      return response(await Promise.all(catalog.map(async ([label, entries]) => ({
+        label, entries: await Promise.all(entries.map(async ([id, title, division]) => {
+          const count = contents.get(id) ?? 0;
+          const scopes = division?.scopes;
+          if (!scopes) return { id, title, ...division, count };
+          const sections = count ? (await store.read('content:' + id))?.value.sections ?? [] : [];
+          return { id, title, ...division, count, scopes: scopes.map(scope => {
+            const scoped = sectionsInScope(sections, scope);
+            return { ...scope, count: scoped.length,
+              questionCount: scoped.reduce((sum, section) => sum + (section.keywords?.length || 1), 0) };
+          }) };
+        })),
+      }))));
     }
     if (pathname === '/api/admin' && method === 'GET') {
       await authenticate(request, password);
@@ -103,6 +115,7 @@ export async function handleAPI(request, store, password) {
     }
     if (pathname === '/api/rooms' && method === 'POST') {
       const data = await readJSON(request);
+      const scope = civilScopes.get(data.source);
       let sections;
       let title;
       if (data.source === 'sample') {
@@ -111,6 +124,11 @@ export async function handleAPI(request, store, password) {
       } else if (data.source === 'paste') {
         sections = parsePlayable(data.raw, 150000);
         title = 'ข้อความที่วางเอง';
+      } else if (scope) {
+        title = scope.bookTitle + ' · ' + scope.label;
+        const book = (await store.read('content:' + scope.book))?.value.sections ?? [];
+        sections = sectionsInScope(book, scope);
+        if (!sections.length) fail('ลักษณะนี้ยังรอใส่เนื้อหา');
       } else if (ids.has(data.source)) {
         title = ids.get(data.source);
         sections = (await store.read('content:' + data.source))?.value.sections;
@@ -118,8 +136,8 @@ export async function handleAPI(request, store, password) {
       } else {
         fail('กรุณาเลือกชุดตัวบท');
       }
-      const room = createRoom({ title, sections, names: data.names, count: data.count, manual: data.manual,
-        mode: data.mode, questionLimit: data.source === 'civil-six' ? data.questionLimit : undefined });
+      const room = createRoom({ title, sections, names: data.names, count: data.count,
+        manual: !scope && data.manual, mode: scope ? 'type' : data.mode });
       await store.sweep();
       for (let attempt = 0; attempt < 5; attempt++) {
         const code = crypto.randomUUID().replace(/-/gu, '').slice(0, 20);
