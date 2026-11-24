@@ -80,6 +80,7 @@ export const demo = [
 ];
 const segmenter = new Intl.Segmenter('th', { granularity: 'word' });
 const heading = /^(?:#{1,6}\s|(?:มาตรา|ข้อ|ตัวอย่าง)\s*[\d๐-๙]+(?:[/๐-๙\d]*)(?:\s+(?:ทวิ|ตรี|จัตวา))?\s*$)/u;
+const numberedArticle = /^(?:มาตรา|ม\.)\s*([\d๐-๙]+(?:\s*\/\s*[\d๐-๙]+)*(?:\s*(?:ทวิ|ตรี|จัตวา|เบญจ))?)(?=$|\s|[–—:])/u;
 
 export function parseSections(raw) {
   const source = raw.replace(/^\uFEFF/u, '').replace(/\r\n?/gu, '\n');
@@ -113,6 +114,7 @@ export function parseSections(raw) {
       if (marker?.[1].length > 500) fail('คีย์เวิร์ดต้องยาวไม่เกิน 500 ตัวอักษร');
       return {
         title: hasTitle ? first.replace(/^#{1,6}\s+/u, '') : 'มาตรา ' + (index + 1),
+        ...(hasTitle ? {} : { generatedTitle: true }),
         text: marker ? body.slice(0, marker.index) + marker[1] + body.slice(marker.index + marker[0].length) : body,
         ...(marker && { keyword: { word: marker[1], offset: marker.index } }),
         ...(keywords.length && { keywords }),
@@ -247,6 +249,9 @@ export function joinRoom(room, { slot, name }) {
 function publishQuestion(room, now, offset) {
   const section = room.sections[room.index];
   const question = makeQuestion(section, offset, room.mode === 'type');
+  if (room.mode === 'type' && !section.generatedTitle) {
+    question.articleNumber = numberedArticle.exec(section.title)?.[1];
+  }
   if (room.mode === 'type' || room.mode === 'choice') {
     question.startsAt = now + 4000;
     question.endsAt = question.startsAt + sectionSeconds(section, question.blanks?.length ?? 1) * 1000;
@@ -271,6 +276,7 @@ function phaseAt(room, now) {
 const canonicalAnswer = word => word.trim().normalize('NFC').replace(/\u0e4d\u0e32/gu, '\u0e33');
 const normalizePhrase = word => canonicalAnswer(word).replace(/\s/gu, '')
   .replace(/[๐-๙]/gu, digit => digit.charCodeAt(0) - 0x0e50);
+const normalizeArticle = value => normalizePhrase(value).replace(/^(?:มาตรา|ม\.)/u, '');
 
 export function act(room, token, data, now = Date.now()) {
   const player = room.players.find(item => item.token && item.token === token);
@@ -283,20 +289,29 @@ export function act(room, token, data, now = Date.now()) {
     if (phase !== 'question' || question.id !== data.question) fail('ข้อนี้จบแล้ว', 409);
     if (Object.hasOwn(question.attempts, player.id)) fail('คุณตอบข้อนี้แล้ว', 409);
     const validWord = word => typeof word === 'string' && word.length <= 500;
+    const article = data.article ?? '';
+    if (question.articleNumber && (typeof article !== 'string' || article.length > 40)) fail('เลขมาตราไม่ถูกต้อง');
+    const hasArticle = question.articleNumber && Boolean(article.trim());
     const answers = data.words;
     if (question.blanks) {
       if (!Array.isArray(answers) || answers.length !== question.blanks.length ||
-          !answers.every(validWord) || !answers.some(word => word.trim())) fail('กรุณาใส่คำตอบอย่างน้อยหนึ่งช่อง');
-    } else if (!validWord(data.word) || !data.word.trim()) fail('กรุณาใส่คำตอบ');
+          !answers.every(validWord) || !(hasArticle || answers.some(word => word.trim()))) fail('กรุณาใส่คำตอบอย่างน้อยหนึ่งช่อง');
+    } else if (!validWord(data.word ?? '') || !(hasArticle || data.word?.trim())) fail('กรุณาใส่คำตอบ');
     if (question.options && !question.options.includes(data.word)) fail('กรุณาเลือกคำจากตัวเลือก');
     const normalize = question.phrase || question.hint?.[0]?.plain ? normalizePhrase : canonicalAnswer;
-    const points = question.blanks ? question.blanks.filter(({ answer }, index) => normalizePhrase(answers[index]) === normalizePhrase(answer)).length :
-      Number(normalize(data.word) === normalize(question.answer));
+    const keywordPoints = question.blanks ? question.blanks.filter(({ answer }, index) => normalizePhrase(answers[index]) === normalizePhrase(answer)).length :
+      Number(normalize(data.word ?? '') === normalize(question.answer));
+    const articlePoints = hasArticle && normalizeArticle(article) === normalizeArticle(question.articleNumber) ? 2 : 0;
+    const points = keywordPoints + articlePoints;
     const correct = points > 0;
     question.attempts[player.id] = correct;
     if (question.blanks || question.hint) {
       question.points ??= {};
       question.points[player.id] = points;
+      if (question.articleNumber) {
+        question.articlePoints ??= {};
+        question.articlePoints[player.id] = articlePoints;
+      }
       player.score += points;
       return;
     }
@@ -346,12 +361,14 @@ export function roomView(room, token, now = Date.now()) {
     players: room.players.map(({ id, name, score, token: key }) => ({ id, name,
       score: score - (review ? 0 : (question?.points?.[id] ?? Number(id === pendingWinner))), joined: Boolean(key) })),
     timing: me && question?.endsAt ? { startsAt: question.startsAt, endsAt: question.endsAt } : undefined,
-    titleOfSection: me && phase !== 'lobby' && phase !== 'countdown' ? section?.title : undefined,
+    titleOfSection: me && phase !== 'lobby' && phase !== 'countdown' && !(question?.articleNumber && !review) ? section?.title : undefined,
     draft: host && room.phase === 'prepare' ? { text: section.text, words: getWords(section.text) } : undefined,
     question: question && me && phase !== 'countdown' ? {
       id: question.id, before: question.before, after: question.after, options: question.options, hint: question.hint,
       blanks: question.blanks?.map(({ before, hint, answer }) => ({ before, hint, answer: review ? answer : undefined })),
       submitted: Object.hasOwn(question.attempts, me.id),
+      askArticle: Boolean(question.articleNumber),
+      articlePoints: review ? question.articlePoints?.[me.id] : undefined,
       earned: keywordScoring && review ? question.points?.[me.id] : undefined,
       result: !keywordScoring || review ? question.attempts[me.id] : undefined,
       winner: pendingWinner ? null : question.winner, answer: review ? question.answer : undefined,
