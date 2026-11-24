@@ -126,9 +126,8 @@ export async function handleAPI(request, store, password) {
       } else if (scope) {
         title = scope.bookTitle + ' · ' + scope.label;
         const book = (await store.read('content:' + scope.book))?.value.sections ?? [];
-        sections = sectionsInScope(book, scope).map(({ keywords, ...section }) => {
-          const keyword = keywords?.[0] ?? section.keyword;
-          if (keyword) return { ...section, keyword };
+        sections = sectionsInScope(book, scope).map(section => {
+          if (section.keywords?.length || section.keyword) return section;
           const words = getWords(section.text);
           return { ...section, keyword: words.find(item => [...item.word].length >= 3) ?? words[0] };
         });

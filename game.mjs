@@ -139,9 +139,10 @@ export function canPlay(section) {
   return new Set(getWords(section.text).map(item => item.word.normalize('NFC'))).size >= 4;
 }
 
-export function sectionSeconds(section) {
+export function sectionSeconds(section, blankCount = section.keywords?.length ?? 1) {
   const length = [...section.text.replace(/\s/gu, '')].length;
-  return section.seconds ?? Math.min(180, Math.max(20, Math.ceil((15 + length / 12) / 5) * 5));
+  const base = Math.max(20, Math.ceil((15 + length / 12) / 5) * 5);
+  return section.seconds ?? Math.min(180, base + Math.max(0, blankCount - 1) * 8);
 }
 
 function maskedWord(word) {
@@ -150,11 +151,21 @@ function maskedWord(word) {
 }
 
 export function makeQuestion(section, selectedOffset, typed = false) {
+  if (typed && selectedOffset === undefined && section.keywords?.length > 1) {
+    let cursor = 0;
+    const blanks = [];
+    for (const { offset, word } of [...section.keywords].sort((a, b) => a.offset - b.offset)) {
+      if (offset < cursor) continue;
+      blanks.push({ before: section.text.slice(cursor, offset), hint: maskedWord(word), answer: word });
+      cursor = offset + word.length;
+    }
+    return { id: crypto.randomUUID(), blanks, after: section.text.slice(cursor), attempts: {}, winner: null };
+  }
   const words = getWords(section.text);
   const candidates = words.filter(item => [...item.word].length >= 3);
   const choices = candidates.length ? candidates : words;
   const selected = selectedOffset === undefined
-    ? section.keyword ?? choices[Math.floor(Math.random() * choices.length)]
+    ? (typed ? section.keywords?.[0] : undefined) ?? section.keyword ?? choices[Math.floor(Math.random() * choices.length)]
     : words.find(item => item.offset === selectedOffset);
   if (!selected) fail('กรุณาเลือกคำจากตัวบท');
   const question = {
@@ -198,7 +209,7 @@ export function createRoom({ title, sections, names, count, manual, mode, questi
     fail('ชื่อผู้เล่นต้องไม่ซ้ำกัน');
   }
   const typed = mode === 'type';
-  if (typed && (!sections.length || !sections.every(section => section.keyword || getWords(section.text).length))) {
+  if (typed && (!sections.length || !sections.every(section => section.keywords?.length || section.keyword || getWords(section.text).length))) {
     fail('แต่ละมาตราต้องมีคำสำหรับเติมอย่างน้อยหนึ่งคำ');
   }
   if (!typed && (!sections.length || !sections.every(canPlay))) fail('แต่ละมาตราต้องมีคำต่างกันอย่างน้อย 4 คำ');
@@ -206,8 +217,7 @@ export function createRoom({ title, sections, names, count, manual, mode, questi
     id: crypto.randomUUID(), token: index === 0 ? crypto.randomUUID() : null,
     name: roster[index] ?? '', score: 0,
   }));
-  let questions = typed && !manual ? sections.flatMap(section => section.keywords?.length
-    ? section.keywords.map(keyword => ({ ...section, keywords: undefined, keyword })) : [section]) : sections;
+  let questions = sections;
   if (questionLimit !== undefined) {
     if (!Number.isInteger(questionLimit) || questionLimit < 1 || questionLimit > 1500) fail('จำนวนข้อไม่ถูกต้อง');
     if (questionLimit < questions.length) questions = shuffle([...questions]).slice(0, questionLimit);
@@ -239,7 +249,7 @@ function publishQuestion(room, now, offset) {
   const question = makeQuestion(section, offset, room.mode === 'type');
   if (room.mode === 'type' || room.mode === 'choice') {
     question.startsAt = now + 4000;
-    question.endsAt = question.startsAt + sectionSeconds(section) * 1000;
+    question.endsAt = question.startsAt + sectionSeconds(section, question.blanks?.length ?? 1) * 1000;
   }
   room.question = question;
   room.phase = 'question';
@@ -272,10 +282,15 @@ export function act(room, token, data, now = Date.now()) {
     if (phase === 'countdown') fail('รอให้เริ่มข้อนี้ก่อน', 409);
     if (phase !== 'question' || question.id !== data.question) fail('ข้อนี้จบแล้ว', 409);
     if (Object.hasOwn(question.attempts, player.id)) fail('คุณตอบข้อนี้แล้ว', 409);
-    if (typeof data.word !== 'string' || !data.word.trim() || data.word.length > 500) fail('กรุณาใส่คำตอบ');
+    const validAnswer = word => typeof word === 'string' && Boolean(word.trim()) && word.length <= 500;
+    const answers = data.words;
+    if (question.blanks) {
+      if (!Array.isArray(answers) || answers.length !== question.blanks.length || !answers.every(validAnswer)) fail('กรุณาใส่คำตอบให้ครบทุกช่อง');
+    } else if (!validAnswer(data.word)) fail('กรุณาใส่คำตอบ');
     if (question.options && !question.options.includes(data.word)) fail('กรุณาเลือกคำจากตัวเลือก');
     const normalize = question.phrase || question.hint?.[0]?.plain ? normalizePhrase : canonicalAnswer;
-    const correct = normalize(data.word) === normalize(question.answer);
+    const correct = question.blanks ? question.blanks.every(({ answer }, index) => normalizePhrase(answers[index]) === normalizePhrase(answer)) :
+      normalize(data.word) === normalize(question.answer);
     question.attempts[player.id] = correct;
     if (correct && !question.winner) {
       question.winner = player.id;
@@ -325,6 +340,7 @@ export function roomView(room, token, now = Date.now()) {
     draft: host && room.phase === 'prepare' ? { text: section.text, words: getWords(section.text) } : undefined,
     question: question && me && phase !== 'countdown' ? {
       id: question.id, before: question.before, after: question.after, options: question.options, hint: question.hint,
+      blanks: question.blanks?.map(({ before, hint, answer }) => ({ before, hint, answer: review ? answer : undefined })),
       result: question.attempts[me.id], winner: pendingWinner ? null : question.winner, answer: review ? question.answer : undefined,
     } : null,
     leaders: room.phase === 'done' ? room.players.filter(player => player.score === highScore).map(player => player.name) : [],
