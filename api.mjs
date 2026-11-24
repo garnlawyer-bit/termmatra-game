@@ -1,4 +1,4 @@
-import { catalog, demo, parseSections, canPlay, sectionSeconds, sectionsInScope, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
+import { catalog, demo, parseSections, canPlay, getWords, sectionSeconds, sectionsInScope, createRoom, joinRoom, act, roomView, fail } from './game.mjs';
 
 const ids = new Map(catalog.flatMap(([, entries]) => entries));
 const civilScopes = new Map(catalog.flatMap(([, entries]) => entries.flatMap(([book, title, division]) =>
@@ -82,8 +82,7 @@ export async function handleAPI(request, store, password) {
           const sections = count ? (await store.read('content:' + id))?.value.sections ?? [] : [];
           return { id, title, ...division, count, scopes: scopes.map(scope => {
             const scoped = sectionsInScope(sections, scope);
-            return { ...scope, count: scoped.length,
-              questionCount: scoped.reduce((sum, section) => sum + (section.keywords?.length || 1), 0) };
+            return { ...scope, count: scoped.length, questionCount: scoped.length };
           }) };
         })),
       }))));
@@ -127,7 +126,12 @@ export async function handleAPI(request, store, password) {
       } else if (scope) {
         title = scope.bookTitle + ' · ' + scope.label;
         const book = (await store.read('content:' + scope.book))?.value.sections ?? [];
-        sections = sectionsInScope(book, scope);
+        sections = sectionsInScope(book, scope).map(({ keywords, ...section }) => {
+          const keyword = keywords?.[0] ?? section.keyword;
+          if (keyword) return { ...section, keyword };
+          const words = getWords(section.text);
+          return { ...section, keyword: words.find(item => [...item.word].length >= 3) ?? words[0] };
+        });
         if (!sections.length) fail('ลักษณะนี้ยังรอใส่เนื้อหา');
       } else if (ids.has(data.source)) {
         title = ids.get(data.source);
