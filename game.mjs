@@ -295,8 +295,10 @@ function openQuestion(room, now) {
 
 function phaseAt(room, now) {
   if (room.phase !== 'question' || !room.question?.startsAt) return room.phase;
-  if (now < room.question.startsAt) return 'countdown';
-  return now < room.question.endsAt ? 'question' : 'review';
+  const { startsAt, endsAt, attempts } = room.question;
+  if (now < startsAt) return 'countdown';
+  if (now >= endsAt || room.players.every(player => Object.hasOwn(attempts, player.id))) return 'review';
+  return 'question';
 }
 
 const canonicalAnswer = word => word.trim().normalize('NFC').replace(/\u0e4d\u0e32/gu, '\u0e33');
