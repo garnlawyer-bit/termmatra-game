@@ -101,7 +101,7 @@ export const demo = [
 ];
 const segmenter = new Intl.Segmenter('th', { granularity: 'word' });
 const heading = /^(?:#{1,6}\s|(?:มาตรา|ข้อ|ตัวอย่าง)\s*[\d๐-๙]+(?:[/๐-๙\d]*)(?:\s+(?:ทวิ|ตรี|จัตวา))?\s*$)/u;
-const numberedArticle = /^(?:มาตรา|ม\.)\s*([\d๐-๙]+(?:\s*\/\s*[\d๐-๙]+)*(?:\s*(?:ทวิ|ตรี|จัตวา|เบญจ))?)(?=$|\s|[–—:])/u;
+const numberedArticle = /^(มาตรา|ม\.|ข้อ)\s*([\d๐-๙]+(?:\s*\/\s*[\d๐-๙]+)*(?:\s*(?:ทวิ|ตรี|จัตวา|เบญจ))?)(?:\s*(\(\s*[\d๐-๙]+\s*\)))?(?=$|\s|[–—:])/u;
 
 export function parseSections(raw) {
   const source = raw.replace(/^\uFEFF/u, '').replace(/\r\n?/gu, '\n');
@@ -271,7 +271,12 @@ function publishQuestion(room, now, offset) {
   const section = room.sections[room.index];
   const question = makeQuestion(section, offset, room.mode === 'type');
   if (room.mode === 'type' && !section.generatedTitle) {
-    question.articleNumber = numberedArticle.exec(section.title)?.[1];
+    const article = numberedArticle.exec(section.title);
+    if (article) {
+      question.articleLabel = article[1] === 'ข้อ' ? 'เลขข้อ' : 'เลขมาตรา';
+      question.articleNumber = article[2];
+      question.articleSubsection = article[3];
+    }
   }
   if (room.mode === 'type' || room.mode === 'choice') {
     question.startsAt = now + 4000;
@@ -297,7 +302,7 @@ function phaseAt(room, now) {
 const canonicalAnswer = word => word.trim().normalize('NFC').replace(/\u0e4d\u0e32/gu, '\u0e33');
 const normalizePhrase = word => canonicalAnswer(word).replace(/\s/gu, '')
   .replace(/[๐-๙]/gu, digit => digit.charCodeAt(0) - 0x0e50);
-const normalizeArticle = value => normalizePhrase(value).replace(/^(?:มาตรา|ม\.)/u, '');
+const normalizeArticle = value => normalizePhrase(value).replace(/^(?:มาตรา|ม\.|ข้อ)/u, '');
 
 export function act(room, token, data, now = Date.now()) {
   const player = room.players.find(item => item.token && item.token === token);
@@ -322,7 +327,15 @@ export function act(room, token, data, now = Date.now()) {
     const normalize = question.phrase || question.hint?.[0]?.plain ? normalizePhrase : canonicalAnswer;
     const keywordPoints = question.blanks ? question.blanks.filter(({ answer }, index) => normalizePhrase(answers[index]) === normalizePhrase(answer)).length :
       Number(normalize(data.word ?? '') === normalize(question.answer));
-    const articlePoints = hasArticle && normalizeArticle(article) === normalizeArticle(question.articleNumber) ? 2 : 0;
+    let articlePoints = 0;
+    if (hasArticle) {
+      const submitted = normalizeArticle(article);
+      const expected = normalizeArticle(question.articleNumber);
+      if (submitted === expected ||
+          (question.articleSubsection && submitted === expected + normalizeArticle(question.articleSubsection))) {
+        articlePoints = 2;
+      }
+    }
     const points = keywordPoints + articlePoints;
     const correct = points > 0;
     question.attempts[player.id] = correct;
@@ -389,6 +402,7 @@ export function roomView(room, token, now = Date.now()) {
       blanks: question.blanks?.map(({ before, hint, answer }) => ({ before, hint, answer: review ? answer : undefined })),
       submitted: Object.hasOwn(question.attempts, me.id),
       askArticle: Boolean(question.articleNumber),
+      articleLabel: question.articleLabel,
       articlePoints: review ? question.articlePoints?.[me.id] : undefined,
       earned: keywordScoring && review ? question.points?.[me.id] : undefined,
       result: !keywordScoring || review ? question.attempts[me.id] : undefined,
