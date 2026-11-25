@@ -306,59 +306,6 @@ const normalizePhrase = word => canonicalAnswer(word).replace(/\s/gu, '')
   .replace(/[๐-๙]/gu, digit => digit.charCodeAt(0) - 0x0e50);
 const normalizeArticle = value => normalizePhrase(value).replace(/^(?:มาตรา|ม\.|ข้อ)/u, '');
 
-const reviewMarkers = /\n{2,}|\n(?=\s*[(（][\d๐-๙]+[)）])|(?:เว้นแต่|แต่ถ้า|แต่ทั้งนี้|ถ้า(?:การ|ผู้|เป็น)|เมื่อ(?:มี|ครบ)|มิให้ใช้บังคับ|(?:บุคคลนั้น)?จะต้องรับผิด|ต้องระวางโทษ|ให้ถือว่า|ย่อม(?:ตกเป็น|มีผล|ระงับ|สิ้นผล))/gu;
-
-function reviewKind(text) {
-  if (/^(?:\[ตัวบทเดิม|เจตนารมณ์|หมายเหตุ|คำอธิบาย)/u.test(text) ||
-      (/^[“‘"]/u.test(text) && text.includes(' — '))) return 'note';
-  if (/^(?:เว้นแต่|แต่ถ้า|แต่ทั้งนี้|มิให้ใช้บังคับ)/u.test(text)) return 'exception';
-  if (/^(?:ถ้า|เมื่อ|ในกรณี|หาก)/u.test(text)) return 'condition';
-  if (/^(?:(?:บุคคลนั้น)?จะต้องรับผิด|ต้องระวางโทษ|ให้ถือว่า|ย่อม(?:ตกเป็น|มีผล|ระงับ|สิ้นผล))/u.test(text)) return 'effect';
-  if (/^[(（][\d๐-๙]+[)）]/u.test(text)) return 'item';
-  return 'rule';
-}
-
-function reviewChunks(question) {
-  const slots = [];
-  let text = '';
-  for (const [slot, blank] of (question.blanks ?? [question]).entries()) {
-    text += blank.before;
-    const start = text.length;
-    text += blank.answer;
-    slots.push({ start, end: text.length, slot });
-  }
-  text += question.after;
-
-  const cuts = [0];
-  let slotIndex = 0;
-  for (const match of text.matchAll(reviewMarkers)) {
-    const index = match[0].startsWith('\n') ? match.index + match[0].length : match.index;
-    while (slots[slotIndex]?.end <= index) slotIndex++;
-    if (index > cuts.at(-1) && !(slots[slotIndex]?.start < index) &&
-        !/^(?:เว้นแต่|แต่ทั้งนี้)\s*$/u.test(text.slice(cuts.at(-1), index))) cuts.push(index);
-  }
-  cuts.push(text.length);
-
-  const chunks = [];
-  slotIndex = 0;
-  for (let i = 1; i < cuts.length; i++) {
-    let cursor = cuts[i - 1];
-    const end = cuts[i];
-    const snippet = text.slice(cursor, end).trim();
-    if (!snippet) continue;
-    const parts = [];
-    while (slots[slotIndex]?.start < end) {
-      const { start, end: slotEnd, slot } = slots[slotIndex++];
-      if (cursor < start) parts.push({ text: text.slice(cursor, start) });
-      parts.push({ text: text.slice(start, slotEnd), slot });
-      cursor = slotEnd;
-    }
-    if (cursor < end) parts.push({ text: text.slice(cursor, end) });
-    chunks.push({ kind: reviewKind(snippet), parts });
-  }
-  return chunks;
-}
-
 export function act(room, token, data, now = Date.now()) {
   const player = room.players.find(item => item.token && item.token === token);
   if (!player) fail('กรุณาเข้าห้องก่อน', 403);
@@ -469,7 +416,6 @@ export function roomView(room, token, now = Date.now()) {
       askArticle: Boolean(question.articleNumber),
       articleLabel: question.articleLabel,
       study: review ? {
-        chunks: reviewChunks(question),
         checks: question.answerChecks?.[me.id] ?? (question.blanks ?? [question]).map(() =>
           Object.hasOwn(question.attempts, me.id) ? 'unknown' : 'blank'),
         article: question.articleNumber ? {
