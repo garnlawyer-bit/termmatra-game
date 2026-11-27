@@ -169,8 +169,11 @@ export function sectionSeconds(section, blankCount = section.keywords?.length ??
 }
 
 function maskedWord(word) {
-  return [...word.matchAll(/([ก-รลว-ฮ]|[\p{L}&&[^\p{Script=Thai}]]|\p{N})(\p{M}*)|./gsv)]
-    .map(([value, hidden, marks]) => hidden ? { hidden: true, marks } : { text: value });
+  const parts = [...word.matchAll(/([ก-รลว-ฮ]|[\p{L}&&[^\p{Script=Thai}]]|\p{N})(\p{M}*)|./gsv)];
+  const firstConsonant = parts.findIndex(([, base]) => /^[ก-รลว-ฮ]$/u.test(base ?? ''));
+  const showConsonant = parts.some(([, base], index) => base && index !== firstConsonant);
+  return parts.map(([value, base, marks], index) =>
+    base && !(showConsonant && index === firstConsonant) ? { hidden: true, marks } : { text: value });
 }
 
 export function makeQuestion(section, selectedOffset, typed = false) {
