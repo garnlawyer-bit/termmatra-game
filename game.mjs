@@ -176,6 +176,13 @@ function maskedWord(word) {
     base && !(showConsonant && index === firstConsonant) ? { hidden: true, marks } : { text: value });
 }
 
+const thaiVowel = /[ะาำเแโใไๅฤฦัิีึืุู]/u;
+
+function vowelHint(word) {
+  return [...word.matchAll(/([^\sะาำเแโใไๅฤฦ])(\p{M}*)|./gsu)].map(([value, base, marks]) =>
+    base ? { hidden: true, marks: [...marks].filter(mark => thaiVowel.test(mark)).join('') } : { text: value });
+}
+
 export function makeQuestion(section, selectedOffset, typed = false) {
   if (typed && selectedOffset === undefined && section.keywords?.length > 1) {
     let cursor = 0;
@@ -185,6 +192,8 @@ export function makeQuestion(section, selectedOffset, typed = false) {
       blanks.push({ before: section.text.slice(cursor, offset), hint: maskedWord(word), answer: word });
       cursor = offset + word.length;
     }
+    const hardBlank = blanks.find(({ answer }) => /[ก-รลว-ฮ]/u.test(answer) && thaiVowel.test(answer)) ?? blanks[0];
+    hardBlank.hint = vowelHint(hardBlank.answer);
     return { id: crypto.randomUUID(), blanks, after: section.text.slice(cursor), attempts: {}, winner: null };
   }
   const words = getWords(section.text);
@@ -202,7 +211,7 @@ export function makeQuestion(section, selectedOffset, typed = false) {
     attempts: {},
     winner: null,
   };
-  if (typed) return { ...question, phrase: selected.plain === true, hint: maskedWord(selected.word) };
+  if (typed) return { ...question, phrase: selected.plain === true, hint: vowelHint(selected.word) };
 
   const alternatives = new Map();
   for (const item of words) {
@@ -355,13 +364,18 @@ export function act(room, token, data, now = Date.now()) {
       question.articleChecks[player.id] = !hasArticle ? 'blank' : articlePoints ? 'correct' : 'wrong';
     }
     if (question.blanks || question.hint) {
+      const halfway = question.startsAt + (question.endsAt - question.startsAt) / 2;
+      const speedBonus = keywordPoints === checks.length && (!question.articleNumber || articlePoints === 2) &&
+        now <= halfway ? 1 : 0;
       question.points ??= {};
-      question.points[player.id] = points;
+      question.points[player.id] = points + speedBonus;
+      question.speedBonuses ??= {};
+      question.speedBonuses[player.id] = speedBonus;
       if (question.articleNumber) {
         question.articlePoints ??= {};
         question.articlePoints[player.id] = articlePoints;
       }
-      player.score += points;
+      player.score += points + speedBonus;
       return;
     }
     if (correct && !question.winner) {
@@ -427,6 +441,7 @@ export function roomView(room, token, now = Date.now()) {
         } : undefined,
       } : undefined,
       articlePoints: review ? question.articlePoints?.[me.id] : undefined,
+      speedBonus: review ? question.speedBonuses?.[me.id] : undefined,
       earned: keywordScoring && review ? question.points?.[me.id] : undefined,
       result: !keywordScoring || review ? question.attempts[me.id] : undefined,
       winner: pendingWinner ? null : question.winner, answer: review ? question.answer : undefined,

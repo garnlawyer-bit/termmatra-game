@@ -161,12 +161,13 @@ export async function handleAPI(request, store, password) {
       }
       if (method === 'POST' && verb) {
         const data = await readJSON(request);
+        const receivedAt = Date.now();
         const result = await changeRoom(store, key, room => {
           if (verb === 'join') {
             const joined = joinRoom(room, data);
             return { token: joined, state: roomView(room, joined) };
           }
-          act(room, token, data);
+          act(room, token, data, data.action === 'answer' ? receivedAt : Date.now());
           return { state: roomView(room, token) };
         });
         return response(result);
