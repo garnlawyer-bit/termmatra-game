@@ -425,6 +425,7 @@ export function roomView(room, token, now = Date.now()) {
       score: score - (review ? 0 : (question?.points?.[id] ?? Number(id === pendingWinner))), joined: Boolean(key) })),
     timing: me && question?.endsAt ? { startsAt: question.startsAt, endsAt: question.endsAt } : undefined,
     titleOfSection: me && phase !== 'lobby' && phase !== 'countdown' && !(question?.articleNumber && !review) ? section?.title : undefined,
+    sectionTopic: me && review ? section?.topic : undefined,
     draft: host && room.phase === 'prepare' ? { text: section.text, words: getWords(section.text) } : undefined,
     question: question && me && phase !== 'countdown' ? {
       id: question.id, before: question.before, after: question.after, options: question.options, hint: question.hint,

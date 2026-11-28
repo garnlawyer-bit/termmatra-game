@@ -6,6 +6,12 @@ const lawScopes = new Map(catalog.flatMap(([, entries]) => entries.flatMap(([boo
 const roomLife = 4 * 60 * 60 * 1000;
 export const maxText = 500000;
 const maxPayload = 2_000_000;
+const sectionTopics = new Map([
+  ['civil-one', new Map([
+    ['มาตรา 4', 'หลักการวินิจฉัยคดีตามกฎหมาย'],
+    ['มาตรา 8', 'ความหมายของคำว่า “เหตุสุดวิสัย”'],
+  ])],
+]);
 
 function response(data, status = 200) {
   return Response.json(data, { status, headers: { 'Cache-Control': 'no-store' } });
@@ -139,6 +145,14 @@ export async function handleAPI(request, store, password) {
       } else {
         fail('กรุณาเลือกชุดตัวบท');
       }
+      const topics = sectionTopics.get(scope?.book ?? data.source);
+      if (topics) sections = sections.map(section => {
+        if (section.generatedTitle) return section;
+        const reference = section.title.trim().replace(/\s+/gu, ' ')
+          .replace(/[๐-๙]/gu, digit => digit.charCodeAt(0) - 0x0e50);
+        const topic = topics.get(reference);
+        return topic ? { ...section, topic } : section;
+      });
       const room = createRoom({ title, sections, names: data.names, count: data.count,
         manual: !scope && data.manual, mode: scope ? 'type' : data.mode });
       await store.sweep();
